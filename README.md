@@ -85,6 +85,13 @@ inputs land in the same feature space the model was trained on.
   Change `primaryColor` (buttons, active tab, slider), `backgroundColor`,
   `secondaryBackgroundColor` (sidebar), or `textColor`, using any hex code.
   Restart the app (or it'll pick it up on the next deploy) to see the change.
+- **Font size**: the main panel (not the sidebar) uses a custom CSS block
+  near the top of `app.py` (`st.markdown(..., unsafe_allow_html=True)`,
+  right after `st.set_page_config`) to render everything more compactly.
+  Adjust the `rem` values in that block to make text larger or smaller --
+  e.g. change `font-size: 0.85rem;` to `1rem` for normal size, or `0.75rem`
+  for even more compact. It only targets `[data-testid="stMain"]`, so the
+  sidebar's font size is unaffected.
 - **Layout**: as of this version, all farmer inputs live in the left
   sidebar (`with st.sidebar:` block in `app.py`), leaving the main panel
   full-width for results. To move fields back into the main area, or

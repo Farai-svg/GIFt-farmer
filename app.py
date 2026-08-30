@@ -25,6 +25,30 @@ import streamlit as st
 
 st.set_page_config(page_title="GIFt Farmer Crop Recommender", page_icon="🌾", layout="wide")
 
+# Scale down font sizes in the main content panel only (sidebar untouched),
+# so the results view reads as "zoomed out" / more compact. Tweak the
+# rem values below to taste -- everything here is scoped to
+# [data-testid="stMain"], which is the main panel Streamlit renders into;
+# [data-testid="stSidebar"] is deliberately left alone.
+st.markdown(
+    """
+    <style>
+    [data-testid="stMain"] {
+        font-size: 0.85rem;
+    }
+    [data-testid="stMain"] h1 { font-size: 1.6rem; }
+    [data-testid="stMain"] h2 { font-size: 1.25rem; }
+    [data-testid="stMain"] h3 { font-size: 1.05rem; }
+    [data-testid="stMain"] p, [data-testid="stMain"] li { font-size: 0.85rem; }
+    [data-testid="stMain"] [data-testid="stMetricValue"] { font-size: 1.3rem; }
+    [data-testid="stMain"] [data-testid="stMetricLabel"] { font-size: 0.8rem; }
+    [data-testid="stMain"] [data-testid="stDataFrame"] * { font-size: 0.8rem; }
+    [data-testid="stMain"] [data-testid="stMarkdownContainer"] { font-size: 0.85rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ---------------------------------------------------------------------
 # Load model artifacts (cached so they only load once per session)
 # ---------------------------------------------------------------------
