@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="GIFt Farmer Crop Recommender", page_icon="🌾", layout="wide")
+st.set_page_config(page_title="Chat-HeQ", page_icon="🌾", layout="wide")
 
 # Scale down font sizes in the main content panel only (sidebar untouched),
 # so the results view reads as "zoomed out" / more compact. Tweak the
