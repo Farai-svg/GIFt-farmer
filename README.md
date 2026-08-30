@@ -79,6 +79,18 @@ cardinality. This logic lives in `fit_transform_features()` /
 exactly in `app.py` (via the saved `encoding.joblib`) so a new farmer's
 inputs land in the same feature space the model was trained on.
 
+## Customizing the interface
+
+- **Colors/theme**: edit `.streamlit/config.toml` — no code changes needed.
+  Change `primaryColor` (buttons, active tab, slider), `backgroundColor`,
+  `secondaryBackgroundColor` (sidebar), or `textColor`, using any hex code.
+  Restart the app (or it'll pick it up on the next deploy) to see the change.
+- **Layout**: as of this version, all farmer inputs live in the left
+  sidebar (`with st.sidebar:` block in `app.py`), leaving the main panel
+  full-width for results. To move fields back into the main area, or
+  rearrange which fields appear where, edit the `with st.sidebar:` block
+  and the two `with tab_recommend:` / `with tab_explore:` blocks directly.
+
 ## Known data caveat
 
 A few crops (tobacco especially) show implausibly high absolute yields

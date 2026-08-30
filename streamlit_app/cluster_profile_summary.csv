@@ -1,8 +1,0 @@
-km_cluster,total_land_ha,n_plots,hh_has_irrigated_plot,has_farm_equipment,has_extension_access,head_age,head_is_male,hh_size,is_urban,n_households,top_marital_status,top_region,top_district,top_land_tenure
-0,0.99,3.03,0.0,1.0,0.0,40.69,1.0,4.73,0.0,6851,MONOGAMOUS MARRIED OR NON-FORMAL UNION,Central,Dowa,CUSTOMARY
-1,2.86,7.62,0.01,1.0,0.39,50.58,0.76,7.12,0.04,2402,MONOGAMOUS MARRIED OR NON-FORMAL UNION,Central,Mzimba,CUSTOMARY
-2,0.87,2.98,0.0,1.0,0.0,45.85,0.0,4.65,0.0,4209,MONOGAMOUS MARRIED OR NON-FORMAL UNION,Southern,Mangochi,CUSTOMARY
-3,1.32,4.7,1.0,1.0,0.36,42.39,0.66,5.2,0.13,1328,MONOGAMOUS MARRIED OR NON-FORMAL UNION,Southern,Lilongwe,CUSTOMARY
-4,0.79,2.6,0.05,0.0,0.16,39.4,0.49,4.24,0.34,233,MONOGAMOUS MARRIED OR NON-FORMAL UNION,Central,Lilongwe City,CUSTOMARY
-5,1.11,3.37,0.0,1.0,1.0,42.82,0.66,4.82,0.0,4926,MONOGAMOUS MARRIED OR NON-FORMAL UNION,Central,Lilongwe,CUSTOMARY
-6,1.07,2.82,0.0,1.0,0.24,44.0,0.66,5.07,1.0,2544,MONOGAMOUS MARRIED OR NON-FORMAL UNION,Central,Lilongwe City,CUSTOMARY

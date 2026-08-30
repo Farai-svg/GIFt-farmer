@@ -1,13 +1,10 @@
 """
-GIFt Farmer Crop Recommender -- Streamlit app (v2)
-====================================================
+GIFt Farmer Crop Recommender -- Streamlit app (v3: sidebar layout)
+====================================================================
 Interactive front-end for the NACAL k-means clustering pipeline
-(gift_nacal_clustering.py). A user enters a farmer's characteristics --
-now including marital status, urban/rural residence, region, district,
-and land tenure, on top of the original farm/farmer traits -- the app
-assigns them to the nearest household cluster, and recommends the crop
-that cluster performs best at, relative to how that crop performs across
-all farmers.
+(gift_nacal_clustering.py). A user enters a farmer's characteristics in
+the SIDEBAR, the app assigns them to the nearest household cluster, and
+the main panel shows which crop that cluster performs best at.
 
 Run with:  streamlit run app.py
 
@@ -16,6 +13,9 @@ Required files in the same folder (all produced by gift_nacal_clustering.py):
   - encoding.joblib          (numeric scaler + categorical category lists/weights)
   - cluster_profile_summary.csv
   - cluster_crop_yield_full_table.csv
+
+Theme: colors are set in .streamlit/config.toml (not in this file) --
+edit that file to change the color palette without touching any code.
 """
 
 import joblib
@@ -76,15 +76,73 @@ def transform_new_farmer(new_farmer: dict) -> np.ndarray:
 
 st.title("🌾 GIFt Farmer Crop Recommender")
 st.caption(
-    "Enter a new farmer's characteristics to find their closest match among "
-    "household clusters derived from the NACAL agricultural survey, and see "
-    "which crop that cluster performs best at."
+    "Enter a new farmer's characteristics in the sidebar to find their closest "
+    "match among household clusters derived from the NACAL agricultural survey, "
+    "and see which crop that cluster performs best at."
 )
 
-with st.expander("ℹ️ How this works / data caveats", expanded=False):
-    n_district = len(CAT_META["district"]["categories"])
-    st.markdown(
-        f"""
+# ---------------------------------------------------------------------
+# SIDEBAR: all farmer inputs live here now
+# ---------------------------------------------------------------------
+
+with st.sidebar:
+    st.header("🧑‍🌾 Farmer characteristics")
+
+    min_obs = st.slider(
+        "Minimum plots to trust a crop estimate",
+        min_value=5, max_value=100, value=30, step=5,
+        help="Crops with fewer observed plots than this in the matched cluster are excluded from the recommendation.",
+    )
+
+    st.subheader("Farm")
+    total_land_ha = st.number_input(
+        FEATURE_LABELS["total_land_ha"], min_value=0.01, max_value=20.0, value=1.0, step=0.1
+    )
+    n_plots = st.number_input(
+        FEATURE_LABELS["n_plots"], min_value=1, max_value=40, value=3, step=1
+    )
+    hh_has_irrigated_plot = st.radio(
+        FEATURE_LABELS["hh_has_irrigated_plot"], ["No", "Yes"], horizontal=True
+    ) == "Yes"
+    has_farm_equipment = st.radio(
+        FEATURE_LABELS["has_farm_equipment"], ["No", "Yes"], horizontal=True, index=1
+    ) == "Yes"
+    has_extension_access = st.radio(
+        FEATURE_LABELS["has_extension_access"], ["No", "Yes"], horizontal=True
+    ) == "Yes"
+    land_tenure = st.selectbox(
+        "Land tenure", [c for c in CAT_META["tenure"]["categories"] if c != "Unknown"]
+    )
+
+    st.subheader("Farmer & household")
+    head_age = st.slider(FEATURE_LABELS["head_age"], min_value=15, max_value=100, value=40)
+    head_is_male = st.radio("Farmer's sex", ["Female", "Male"], horizontal=True) == "Male"
+    hh_size = st.number_input(
+        FEATURE_LABELS["hh_size"], min_value=1, max_value=25, value=5, step=1
+    )
+    marital_status = st.selectbox(
+        "Marital status", [c for c in CAT_META["marital"]["categories"] if c != "Unknown"]
+    )
+    is_urban = st.radio(
+        FEATURE_LABELS["is_urban"], ["No (rural)", "Yes (urban)"], horizontal=True
+    ) == "Yes (urban)"
+    region = st.selectbox("Region", CAT_META["region"]["categories"])
+    district_options = [c for c in CAT_META["district"]["categories"] if c != "Unknown"]
+    district = st.selectbox("District", sorted(district_options))
+
+    submitted = st.button("🔎 Find cluster & recommend crop", type="primary", use_container_width=True)
+
+# ---------------------------------------------------------------------
+# MAIN PANEL: tabs for results / explore
+# ---------------------------------------------------------------------
+
+tab_recommend, tab_explore = st.tabs(["🌱 Recommendation", "🔍 Explore clusters & crops"])
+
+with tab_recommend:
+    with st.expander("ℹ️ How this works / data caveats", expanded=False):
+        n_district = len(CAT_META["district"]["categories"])
+        st.markdown(
+            f"""
 - **Clustering**: households are grouped by k-means on farm size, plot count,
   irrigation, equipment, extension access, farmer demographics (age, sex,
   household size), urban/rural residence, marital status, region, district
@@ -105,68 +163,15 @@ with st.expander("ℹ️ How this works / data caveats", expanded=False):
   records. Absolute yield numbers should be treated as directional, not
   exact, until checked against the original questionnaire.
 - Recommendations are restricted to crops with a minimum number of observed
-  plots in a cluster (adjustable below), so recommendations aren't driven by
-  a handful of unusual records.
-        """
-    )
-
-tab_recommend, tab_explore = st.tabs(["🧑‍🌾 Recommend for a new farmer", "🔍 Explore clusters & crops"])
-
-# ---------------------------------------------------------------------
-# TAB 1: New farmer recommendation
-# ---------------------------------------------------------------------
-
-with tab_recommend:
-    st.subheader("Farmer characteristics")
-
-    min_obs = st.slider(
-        "Minimum plots required to trust a crop's performance estimate",
-        min_value=5, max_value=100, value=30, step=5,
-        help="Crops with fewer observed plots than this in the matched cluster are excluded from the recommendation.",
-    )
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**Farm characteristics**")
-        total_land_ha = st.number_input(
-            FEATURE_LABELS["total_land_ha"], min_value=0.01, max_value=20.0, value=1.0, step=0.1
-        )
-        n_plots = st.number_input(
-            FEATURE_LABELS["n_plots"], min_value=1, max_value=40, value=3, step=1
-        )
-        hh_has_irrigated_plot = st.radio(
-            FEATURE_LABELS["hh_has_irrigated_plot"], ["No", "Yes"], horizontal=True
-        ) == "Yes"
-        has_farm_equipment = st.radio(
-            FEATURE_LABELS["has_farm_equipment"], ["No", "Yes"], horizontal=True, index=1
-        ) == "Yes"
-        has_extension_access = st.radio(
-            FEATURE_LABELS["has_extension_access"], ["No", "Yes"], horizontal=True
-        ) == "Yes"
-        land_tenure = st.selectbox(
-            "Land tenure", [c for c in CAT_META["tenure"]["categories"] if c != "Unknown"]
+  plots in a cluster (adjustable in the sidebar), so recommendations aren't
+  driven by a handful of unusual records.
+            """
         )
 
-    with col2:
-        st.markdown("**Farmer & household characteristics**")
-        head_age = st.slider(FEATURE_LABELS["head_age"], min_value=15, max_value=100, value=40)
-        head_is_male = st.radio("Farmer's sex", ["Female", "Male"], horizontal=True) == "Male"
-        hh_size = st.number_input(
-            FEATURE_LABELS["hh_size"], min_value=1, max_value=25, value=5, step=1
-        )
-        marital_status = st.selectbox(
-            "Marital status", [c for c in CAT_META["marital"]["categories"] if c != "Unknown"]
-        )
-        is_urban = st.radio(
-            FEATURE_LABELS["is_urban"], ["No (rural)", "Yes (urban)"], horizontal=True
-        ) == "Yes (urban)"
-        region = st.selectbox("Region", CAT_META["region"]["categories"])
-        district_options = [c for c in CAT_META["district"]["categories"] if c != "Unknown"]
-        district = st.selectbox("District", sorted(district_options))
-
-    submitted = st.button("🔎 Find cluster & recommend crop", type="primary")
-
-    if submitted:
+    if not submitted:
+        st.info("👈 Fill in the farmer's characteristics in the sidebar, then click "
+                 "**Find cluster & recommend crop**.")
+    else:
         new_farmer = {
             "total_land_ha": total_land_ha,
             "n_plots": n_plots,
@@ -185,7 +190,6 @@ with tab_recommend:
         X_new = transform_new_farmer(new_farmer)
         assigned_cluster = int(kmeans_model.predict(X_new)[0])
 
-        st.divider()
         st.success(f"This farmer matches **Cluster {assigned_cluster}**")
 
         candidates = crop_stats[
@@ -195,14 +199,14 @@ with tab_recommend:
         if candidates.empty:
             st.warning(
                 "No crop in this cluster meets the minimum-observations threshold. "
-                "Try lowering the threshold above."
+                "Try lowering the threshold in the sidebar."
             )
         else:
             top = candidates.iloc[0]
-            rcol1, rcol2, rcol3 = st.columns(3)
-            rcol1.metric("Recommended crop", top["crop_code"])
-            rcol2.metric("Relative yield index", f"{top['relative_yield_index']:.2f}x")
-            rcol3.metric("Median yield (kg/ha)", f"{top['median_yield_kg_per_ha']:,.0f}")
+            st.markdown(f"**Recommended crop:** {top['crop_code']}")
+            rcol1, rcol2 = st.columns(2)
+            rcol1.metric("Relative yield index", f"{top['relative_yield_index']:.2f}x")
+            rcol2.metric("Median yield (kg/ha)", f"{top['median_yield_kg_per_ha']:,.0f}")
 
             st.markdown("**Other strong candidate crops for this cluster:**")
             display_df = candidates.head(6)[
