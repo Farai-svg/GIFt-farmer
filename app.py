@@ -1,23 +1,25 @@
 """
-GIFt Farmer Crop Recommender -- Streamlit app
-==============================================
+GIFt Farmer Crop Recommender -- Streamlit app (v2)
+====================================================
 Interactive front-end for the NACAL k-means clustering pipeline
-(gift_nacal_clustering.py). A user enters a farmer's characteristics,
-the app assigns them to the nearest household cluster (using the fitted
-scaler + k-means model), and recommends the crop that cluster performs
-best at, relative to how that crop performs across all farmers.
+(gift_nacal_clustering.py). A user enters a farmer's characteristics --
+now including marital status, urban/rural residence, region, district,
+and land tenure, on top of the original farm/farmer traits -- the app
+assigns them to the nearest household cluster, and recommends the crop
+that cluster performs best at, relative to how that crop performs across
+all farmers.
 
 Run with:  streamlit run app.py
 
 Required files in the same folder (all produced by gift_nacal_clustering.py):
-  - scaler.joblib
   - kmeans_model.joblib
-  - feature_cols.joblib
+  - encoding.joblib          (numeric scaler + categorical category lists/weights)
   - cluster_profile_summary.csv
   - cluster_crop_yield_full_table.csv
 """
 
 import joblib
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -29,15 +31,16 @@ st.set_page_config(page_title="GIFt Farmer Crop Recommender", page_icon="🌾", 
 
 @st.cache_resource
 def load_artifacts():
-    scaler = joblib.load("scaler.joblib")
     kmeans_model = joblib.load("kmeans_model.joblib")
-    feature_cols = joblib.load("feature_cols.joblib")
+    encoding = joblib.load("encoding.joblib")
     cluster_profile = pd.read_csv("cluster_profile_summary.csv").set_index("km_cluster")
     crop_stats = pd.read_csv("cluster_crop_yield_full_table.csv")
-    return scaler, kmeans_model, feature_cols, cluster_profile, crop_stats
+    return kmeans_model, encoding, cluster_profile, crop_stats
 
 
-scaler, kmeans_model, FEATURE_COLS, cluster_profile, crop_stats = load_artifacts()
+kmeans_model, encoding, cluster_profile, crop_stats = load_artifacts()
+NUMERIC_COLS = encoding["numeric_cols"]
+CAT_META = encoding["categorical_meta"]  # {"marital": {...}, "region": {...}, "tenure": {...}, "district": {...}}
 
 FEATURE_LABELS = {
     "total_land_ha": "Total land size (ha)",
@@ -48,7 +51,28 @@ FEATURE_LABELS = {
     "head_age": "Farmer's age",
     "head_is_male": "Farmer is male",
     "hh_size": "Household size",
+    "is_urban": "Lives in an urban area",
 }
+
+
+def transform_new_farmer(new_farmer: dict) -> np.ndarray:
+    """Mirrors gift_nacal_clustering.transform_new_farmer exactly, so a
+    farmer entered here lands in the same feature space the model was
+    trained on."""
+    X_num_df = pd.DataFrame([new_farmer])[NUMERIC_COLS]
+    X_numeric = encoding["scaler"].transform(X_num_df)
+
+    cat_blocks = []
+    for name, meta in CAT_META.items():
+        cats = meta["categories"]
+        val = new_farmer.get(name, "Unknown")
+        if val not in cats:
+            val = "Unknown" if "Unknown" in cats else cats[0]
+        row = np.array([[1.0 if c == val else 0.0 for c in cats]]) * meta["weight"]
+        cat_blocks.append(row)
+
+    return np.hstack([X_numeric] + cat_blocks)
+
 
 st.title("🌾 GIFt Farmer Crop Recommender")
 st.caption(
@@ -58,22 +82,28 @@ st.caption(
 )
 
 with st.expander("ℹ️ How this works / data caveats", expanded=False):
+    n_district = len(CAT_META["district"]["categories"])
     st.markdown(
-        """
+        f"""
 - **Clustering**: households are grouped by k-means on farm size, plot count,
-  irrigation access, equipment, extension access, and farmer/household
-  demographics (age, sex, household size).
+  irrigation, equipment, extension access, farmer demographics (age, sex,
+  household size), urban/rural residence, marital status, region, district
+  (all {n_district} of them), and land tenure.
+- **Mixed data types**: numeric/binary features are standardized (z-scores);
+  categorical variables (marital status, region, district, tenure) are
+  one-hot encoded, with each variable's block scaled by 1/√(number of
+  categories) so that District — with {n_district} categories — doesn't
+  mechanically dominate the distance calculation just by having more
+  columns than everything else combined.
 - **Crop performance** is measured as a **relative yield index**: a cluster's
   median yield for a crop, divided by that crop's median yield across *all*
   households. An index of 2.0 means this cluster's farmers get roughly double
-  the typical yield for that crop; below 1.0 means below average. This
-  (rather than raw kg/ha) is used because bulky root crops like potato and
-  cassava always show much higher raw kg/ha than grains, regardless of fit.
+  the typical yield for that crop; below 1.0 means below average.
 - **Data quality caveat**: a few crops (tobacco in particular) show
   implausibly high absolute yields versus published agronomic benchmarks,
   suggesting a units issue in the underlying survey field for at least some
   records. Absolute yield numbers should be treated as directional, not
-  exact, until that's checked against the original questionnaire.
+  exact, until checked against the original questionnaire.
 - Recommendations are restricted to crops with a minimum number of observed
   plots in a cluster (adjustable below), so recommendations aren't driven by
   a handful of unusual records.
@@ -97,18 +127,13 @@ with tab_recommend:
 
     col1, col2 = st.columns(2)
     with col1:
+        st.markdown("**Farm characteristics**")
         total_land_ha = st.number_input(
             FEATURE_LABELS["total_land_ha"], min_value=0.01, max_value=20.0, value=1.0, step=0.1
         )
         n_plots = st.number_input(
             FEATURE_LABELS["n_plots"], min_value=1, max_value=40, value=3, step=1
         )
-        hh_size = st.number_input(
-            FEATURE_LABELS["hh_size"], min_value=1, max_value=25, value=5, step=1
-        )
-        head_age = st.slider(FEATURE_LABELS["head_age"], min_value=15, max_value=100, value=40)
-
-    with col2:
         hh_has_irrigated_plot = st.radio(
             FEATURE_LABELS["hh_has_irrigated_plot"], ["No", "Yes"], horizontal=True
         ) == "Yes"
@@ -118,7 +143,26 @@ with tab_recommend:
         has_extension_access = st.radio(
             FEATURE_LABELS["has_extension_access"], ["No", "Yes"], horizontal=True
         ) == "Yes"
+        land_tenure = st.selectbox(
+            "Land tenure", [c for c in CAT_META["tenure"]["categories"] if c != "Unknown"]
+        )
+
+    with col2:
+        st.markdown("**Farmer & household characteristics**")
+        head_age = st.slider(FEATURE_LABELS["head_age"], min_value=15, max_value=100, value=40)
         head_is_male = st.radio("Farmer's sex", ["Female", "Male"], horizontal=True) == "Male"
+        hh_size = st.number_input(
+            FEATURE_LABELS["hh_size"], min_value=1, max_value=25, value=5, step=1
+        )
+        marital_status = st.selectbox(
+            "Marital status", [c for c in CAT_META["marital"]["categories"] if c != "Unknown"]
+        )
+        is_urban = st.radio(
+            FEATURE_LABELS["is_urban"], ["No (rural)", "Yes (urban)"], horizontal=True
+        ) == "Yes (urban)"
+        region = st.selectbox("Region", CAT_META["region"]["categories"])
+        district_options = [c for c in CAT_META["district"]["categories"] if c != "Unknown"]
+        district = st.selectbox("District", sorted(district_options))
 
     submitted = st.button("🔎 Find cluster & recommend crop", type="primary")
 
@@ -132,15 +176,18 @@ with tab_recommend:
             "head_age": head_age,
             "head_is_male": float(head_is_male),
             "hh_size": hh_size,
+            "is_urban": float(is_urban),
+            "marital": marital_status,
+            "region": region,
+            "tenure": land_tenure,
+            "district": district,
         }
-        X_new = pd.DataFrame([new_farmer])[FEATURE_COLS]
-        X_new_scaled = scaler.transform(X_new)
-        assigned_cluster = int(kmeans_model.predict(X_new_scaled)[0])
+        X_new = transform_new_farmer(new_farmer)
+        assigned_cluster = int(kmeans_model.predict(X_new)[0])
 
         st.divider()
         st.success(f"This farmer matches **Cluster {assigned_cluster}**")
 
-        # Crop candidates for this cluster
         candidates = crop_stats[
             (crop_stats["km_cluster"] == assigned_cluster) & (crop_stats["n_obs"] >= min_obs)
         ].sort_values("relative_yield_index", ascending=False)
@@ -176,11 +223,18 @@ with tab_recommend:
         st.markdown("**How this farmer compares to the cluster's typical profile:**")
         profile_row = cluster_profile.loc[assigned_cluster]
         compare_df = pd.DataFrame({
-            "This farmer": pd.Series(new_farmer),
-            "Cluster average": profile_row[FEATURE_COLS],
+            "This farmer": pd.Series({k: v for k, v in new_farmer.items() if k in NUMERIC_COLS}),
+            "Cluster average": profile_row[NUMERIC_COLS],
         })
         compare_df.index = [FEATURE_LABELS.get(i, i) for i in compare_df.index]
         st.dataframe(compare_df.round(2), use_container_width=True)
+
+        st.markdown("**Cluster's most common categories** (for context):")
+        cat_cols = st.columns(4)
+        cat_cols[0].metric("Marital status", profile_row.get("top_marital_status", "—"))
+        cat_cols[1].metric("Region", profile_row.get("top_region", "—"))
+        cat_cols[2].metric("District", profile_row.get("top_district", "—"))
+        cat_cols[3].metric("Land tenure", profile_row.get("top_land_tenure", "—"))
 
 # ---------------------------------------------------------------------
 # TAB 2: Explore clusters & crops
@@ -188,10 +242,8 @@ with tab_recommend:
 
 with tab_explore:
     st.subheader("Browse all clusters")
-    st.dataframe(
-        cluster_profile.rename(columns=FEATURE_LABELS).round(2),
-        use_container_width=True,
-    )
+    display_profile = cluster_profile.rename(columns=FEATURE_LABELS)
+    st.dataframe(display_profile.round(2), use_container_width=True)
 
     st.subheader("Crop performance by cluster")
     fcol1, fcol2, fcol3 = st.columns(3)

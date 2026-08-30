@@ -1,8 +1,14 @@
-# GIFt Farmer Crop Recommender (Streamlit)
+# GIFt Farmer Crop Recommender (Streamlit) -- v2
 
 Interactive app for the NACAL k-means clustering pipeline: enter a new
 farmer's characteristics, get matched to the closest household cluster,
 and see which crop performs best in that cluster.
+
+**v2 change:** added marital status, urban/rural residence, region,
+district, and land tenure to the clustering features, on top of the
+original farm/farmer traits (land size, plot count, irrigation, equipment,
+extension access, farmer age/sex, household size). See "Mixed data types"
+below for how these are combined with the numeric features.
 
 ## Files
 
@@ -10,12 +16,16 @@ and see which crop performs best in that cluster.
 |---|---|
 | `app.py` | The Streamlit app |
 | `gift_nacal_clustering.py` | The full analysis pipeline (run this first / to regenerate artifacts) |
-| `scaler.joblib` | Fitted `StandardScaler` from the pipeline |
 | `kmeans_model.joblib` | Fitted `KMeans` model |
-| `feature_cols.joblib` | List of feature columns, in the order the model expects |
-| `cluster_profile_summary.csv` | Mean feature values per cluster (for display/comparison) |
+| `encoding.joblib` | Numeric scaler + categorical category lists/weights, used to transform a new farmer's inputs into the same feature space the model was trained on |
+| `cluster_profile_summary.csv` | Mean feature values per cluster, plus each cluster's most common marital status / region / district / land tenure |
 | `cluster_crop_yield_full_table.csv` | Cluster x crop yield stats (median/mean yield, relative index, plot counts) |
+| `household_clusters_nacal.csv` | Every household with its assigned cluster |
+| `plot_yield_with_cluster.csv` | Every plot-level yield record with its household's cluster |
+| `best_crop_per_cluster_nacal.csv` | The single best crop per cluster |
+| `silhouette_scores_nacal.png` | Silhouette score by k, showing why k=7 was selected |
 | `requirements.txt` | Python dependencies |
+| `screenshots/` | Example screenshots of the app in use |
 
 ## Setup
 
@@ -42,15 +52,32 @@ This opens the app in your browser (default: http://localhost:8501).
 ## What the app does
 
 - **Recommend for a new farmer** tab: enter land size, plot count,
-  irrigation/equipment/extension access, farmer age & sex, and household
-  size. The app scales these the same way the training data was scaled,
+  irrigation/equipment/extension access, farmer age & sex, household size,
+  marital status, urban/rural residence, region, district, and land tenure.
+  The app encodes these the same way the training data was encoded,
   predicts the nearest cluster, and shows the top candidate crops for that
-  cluster ranked by relative yield index (a crop's yield in this cluster
-  vs. its yield across all farmers) -- along with how this farmer's inputs
-  compare to the cluster's typical profile.
+  cluster ranked by relative yield index -- along with how this farmer's
+  inputs compare to the cluster's typical profile, and the cluster's most
+  common categorical characteristics.
 - **Explore clusters & crops** tab: browse all cluster profiles, and filter
   the full cluster x crop performance table by cluster, crop, and minimum
   number of observed plots (to exclude thin/unreliable estimates).
+
+## Mixed data types: how numeric and categorical features are combined
+
+K-means needs numeric input. Continuous/binary features (land size, plot
+count, age, etc.) are standardized to mean 0 / sd 1, same as v1. The new
+categorical features (marital status, region, district, land tenure) are
+one-hot encoded -- but District alone has 32 categories, which would give
+it far more columns (and therefore far more influence on distance
+calculations) than every other feature combined. To prevent District from
+mechanically dominating the clustering, each categorical variable's one-hot
+block is scaled by `1/sqrt(number of categories)`, keeping every variable's
+*total* contribution to the distance metric comparable regardless of its
+cardinality. This logic lives in `fit_transform_features()` /
+`transform_new_farmer()` in `gift_nacal_clustering.py`, and is mirrored
+exactly in `app.py` (via the saved `encoding.joblib`) so a new farmer's
+inputs land in the same feature space the model was trained on.
 
 ## Known data caveat
 
