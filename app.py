@@ -50,7 +50,7 @@ FEATURE_LABELS = {
     "hh_size": "Household size",
 }
 
-st.title("🌾 GIFt Farmer Crop Recommender")
+st.title("🌾 GIFt Individual Level Predictions")
 st.caption(
     "Enter a new farmer's characteristics to find their closest match among "
     "household clusters derived from the NACAL agricultural survey, and see "
