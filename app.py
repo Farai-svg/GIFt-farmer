@@ -1,0 +1,228 @@
+"""
+GIFt Farmer Crop Recommender -- Streamlit app
+==============================================
+Interactive front-end for the NACAL k-means clustering pipeline
+(gift_nacal_clustering.py). A user enters a farmer's characteristics,
+the app assigns them to the nearest household cluster (using the fitted
+scaler + k-means model), and recommends the crop that cluster performs
+best at, relative to how that crop performs across all farmers.
+
+Run with:  streamlit run app.py
+
+Required files in the same folder (all produced by gift_nacal_clustering.py):
+  - scaler.joblib
+  - kmeans_model.joblib
+  - feature_cols.joblib
+  - cluster_profile_summary.csv
+  - cluster_crop_yield_full_table.csv
+"""
+
+import joblib
+import pandas as pd
+import streamlit as st
+
+st.set_page_config(page_title="GIFt Farmer Crop Recommender", page_icon="🌾", layout="wide")
+
+# ---------------------------------------------------------------------
+# Load model artifacts (cached so they only load once per session)
+# ---------------------------------------------------------------------
+
+@st.cache_resource
+def load_artifacts():
+    scaler = joblib.load("scaler.joblib")
+    kmeans_model = joblib.load("kmeans_model.joblib")
+    feature_cols = joblib.load("feature_cols.joblib")
+    cluster_profile = pd.read_csv("cluster_profile_summary.csv").set_index("km_cluster")
+    crop_stats = pd.read_csv("cluster_crop_yield_full_table.csv")
+    return scaler, kmeans_model, feature_cols, cluster_profile, crop_stats
+
+
+scaler, kmeans_model, FEATURE_COLS, cluster_profile, crop_stats = load_artifacts()
+
+FEATURE_LABELS = {
+    "total_land_ha": "Total land size (ha)",
+    "n_plots": "Number of plots/gardens",
+    "hh_has_irrigated_plot": "Has an irrigated plot",
+    "has_farm_equipment": "Owns farm equipment",
+    "has_extension_access": "Received extension/advisory services",
+    "head_age": "Farmer's age",
+    "head_is_male": "Farmer is male",
+    "hh_size": "Household size",
+}
+
+st.title("🌾 GIFt Farmer Crop Recommender")
+st.caption(
+    "Enter a new farmer's characteristics to find their closest match among "
+    "household clusters derived from the NACAL agricultural survey, and see "
+    "which crop that cluster performs best at."
+)
+
+with st.expander("ℹ️ How this works / data caveats", expanded=False):
+    st.markdown(
+        """
+- **Clustering**: households are grouped by k-means on farm size, plot count,
+  irrigation access, equipment, extension access, and farmer/household
+  demographics (age, sex, household size).
+- **Crop performance** is measured as a **relative yield index**: a cluster's
+  median yield for a crop, divided by that crop's median yield across *all*
+  households. An index of 2.0 means this cluster's farmers get roughly double
+  the typical yield for that crop; below 1.0 means below average. This
+  (rather than raw kg/ha) is used because bulky root crops like potato and
+  cassava always show much higher raw kg/ha than grains, regardless of fit.
+- **Data quality caveat**: a few crops (tobacco in particular) show
+  implausibly high absolute yields versus published agronomic benchmarks,
+  suggesting a units issue in the underlying survey field for at least some
+  records. Absolute yield numbers should be treated as directional, not
+  exact, until that's checked against the original questionnaire.
+- Recommendations are restricted to crops with a minimum number of observed
+  plots in a cluster (adjustable below), so recommendations aren't driven by
+  a handful of unusual records.
+        """
+    )
+
+tab_recommend, tab_explore = st.tabs(["🧑‍🌾 Recommend for a new farmer", "🔍 Explore clusters & crops"])
+
+# ---------------------------------------------------------------------
+# TAB 1: New farmer recommendation
+# ---------------------------------------------------------------------
+
+with tab_recommend:
+    st.subheader("Farmer characteristics")
+
+    min_obs = st.slider(
+        "Minimum plots required to trust a crop's performance estimate",
+        min_value=5, max_value=100, value=30, step=5,
+        help="Crops with fewer observed plots than this in the matched cluster are excluded from the recommendation.",
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        total_land_ha = st.number_input(
+            FEATURE_LABELS["total_land_ha"], min_value=0.01, max_value=20.0, value=1.0, step=0.1
+        )
+        n_plots = st.number_input(
+            FEATURE_LABELS["n_plots"], min_value=1, max_value=40, value=3, step=1
+        )
+        hh_size = st.number_input(
+            FEATURE_LABELS["hh_size"], min_value=1, max_value=25, value=5, step=1
+        )
+        head_age = st.slider(FEATURE_LABELS["head_age"], min_value=15, max_value=100, value=40)
+
+    with col2:
+        hh_has_irrigated_plot = st.radio(
+            FEATURE_LABELS["hh_has_irrigated_plot"], ["No", "Yes"], horizontal=True
+        ) == "Yes"
+        has_farm_equipment = st.radio(
+            FEATURE_LABELS["has_farm_equipment"], ["No", "Yes"], horizontal=True, index=1
+        ) == "Yes"
+        has_extension_access = st.radio(
+            FEATURE_LABELS["has_extension_access"], ["No", "Yes"], horizontal=True
+        ) == "Yes"
+        head_is_male = st.radio("Farmer's sex", ["Female", "Male"], horizontal=True) == "Male"
+
+    submitted = st.button("🔎 Find cluster & recommend crop", type="primary")
+
+    if submitted:
+        new_farmer = {
+            "total_land_ha": total_land_ha,
+            "n_plots": n_plots,
+            "hh_has_irrigated_plot": float(hh_has_irrigated_plot),
+            "has_farm_equipment": float(has_farm_equipment),
+            "has_extension_access": float(has_extension_access),
+            "head_age": head_age,
+            "head_is_male": float(head_is_male),
+            "hh_size": hh_size,
+        }
+        X_new = pd.DataFrame([new_farmer])[FEATURE_COLS]
+        X_new_scaled = scaler.transform(X_new)
+        assigned_cluster = int(kmeans_model.predict(X_new_scaled)[0])
+
+        st.divider()
+        st.success(f"This farmer matches **Cluster {assigned_cluster}**")
+
+        # Crop candidates for this cluster
+        candidates = crop_stats[
+            (crop_stats["km_cluster"] == assigned_cluster) & (crop_stats["n_obs"] >= min_obs)
+        ].sort_values("relative_yield_index", ascending=False)
+
+        if candidates.empty:
+            st.warning(
+                "No crop in this cluster meets the minimum-observations threshold. "
+                "Try lowering the threshold above."
+            )
+        else:
+            top = candidates.iloc[0]
+            rcol1, rcol2, rcol3 = st.columns(3)
+            rcol1.metric("Recommended crop", top["crop_code"])
+            rcol2.metric("Relative yield index", f"{top['relative_yield_index']:.2f}x")
+            rcol3.metric("Median yield (kg/ha)", f"{top['median_yield_kg_per_ha']:,.0f}")
+
+            st.markdown("**Other strong candidate crops for this cluster:**")
+            display_df = candidates.head(6)[
+                ["crop_code", "relative_yield_index", "median_yield_kg_per_ha", "n_obs"]
+            ].rename(columns={
+                "crop_code": "Crop",
+                "relative_yield_index": "Relative yield index",
+                "median_yield_kg_per_ha": "Median yield (kg/ha)",
+                "n_obs": "Plots observed",
+            })
+            st.dataframe(display_df.set_index("Crop").style.format({
+                "Relative yield index": "{:.2f}x",
+                "Median yield (kg/ha)": "{:,.0f}",
+            }), use_container_width=True)
+
+            st.bar_chart(display_df.set_index("Crop")["Relative yield index"])
+
+        st.markdown("**How this farmer compares to the cluster's typical profile:**")
+        profile_row = cluster_profile.loc[assigned_cluster]
+        compare_df = pd.DataFrame({
+            "This farmer": pd.Series(new_farmer),
+            "Cluster average": profile_row[FEATURE_COLS],
+        })
+        compare_df.index = [FEATURE_LABELS.get(i, i) for i in compare_df.index]
+        st.dataframe(compare_df.round(2), use_container_width=True)
+
+# ---------------------------------------------------------------------
+# TAB 2: Explore clusters & crops
+# ---------------------------------------------------------------------
+
+with tab_explore:
+    st.subheader("Browse all clusters")
+    st.dataframe(
+        cluster_profile.rename(columns=FEATURE_LABELS).round(2),
+        use_container_width=True,
+    )
+
+    st.subheader("Crop performance by cluster")
+    fcol1, fcol2, fcol3 = st.columns(3)
+    with fcol1:
+        cluster_filter = st.multiselect(
+            "Filter by cluster", sorted(crop_stats["km_cluster"].unique()),
+            default=sorted(crop_stats["km_cluster"].unique()),
+        )
+    with fcol2:
+        crop_filter = st.multiselect(
+            "Filter by crop", sorted(crop_stats["crop_code"].unique())
+        )
+    with fcol3:
+        min_obs_explore = st.slider("Min plots observed", 1, 200, 30, key="explore_min_obs")
+
+    filtered = crop_stats[
+        crop_stats["km_cluster"].isin(cluster_filter) & (crop_stats["n_obs"] >= min_obs_explore)
+    ]
+    if crop_filter:
+        filtered = filtered[filtered["crop_code"].isin(crop_filter)]
+
+    filtered = filtered.sort_values(["km_cluster", "relative_yield_index"], ascending=[True, False])
+    st.dataframe(
+        filtered[["km_cluster", "crop_code", "relative_yield_index",
+                  "median_yield_kg_per_ha", "avg_yield_kg_per_ha", "n_obs"]].rename(columns={
+            "km_cluster": "Cluster", "crop_code": "Crop",
+            "relative_yield_index": "Relative yield index",
+            "median_yield_kg_per_ha": "Median yield (kg/ha)",
+            "avg_yield_kg_per_ha": "Mean yield (kg/ha)",
+            "n_obs": "Plots observed",
+        }),
+        use_container_width=True,
+        height=450,
+    )
