@@ -98,7 +98,7 @@ def transform_new_farmer(new_farmer: dict) -> np.ndarray:
     return np.hstack([X_numeric] + cat_blocks)
 
 
-st.title("🌾 Chat-Heq")
+st.title("🌾GIFt-Individual")
 st.caption(
     "Enter a new farmer's characteristics in the sidebar to find their closest "
     "match among household clusters derived from the NACAL agricultural survey, "
